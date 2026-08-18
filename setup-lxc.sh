@@ -8,7 +8,7 @@
 # Usage (run INSIDE the LXC container as root, e.g. via `pct exec <ID> -- bash`
 # or by pasting into the container's console):
 #
-#   bash -c "$(curl -fsSL https://your-host/setup-lxc.sh)"
+#   bash -c "$(curl -fsSL https://raw.githubusercontent.com/themorajr/proxmox-lxc-pre/main/setup-lxc.sh)"
 #
 # or locally:
 #
@@ -54,6 +54,39 @@ if ! command -v apt-get >/dev/null 2>&1; then
 fi
 
 ALLOW_ROOT_SSH="${ALLOW_ROOT_SSH:-yes}"
+
+# ---------------------------------------------------------------------------
+# Network / DNS pre-flight check
+# ---------------------------------------------------------------------------
+DNS_SERVERS="${DNS_SERVERS:-1.1.1.1 8.8.8.8}"
+
+check_network() { timeout 3 bash -c "cat < /dev/null > /dev/tcp/1.1.1.1/443" >/dev/null 2>&1; }
+check_dns()     { getent hosts archive.ubuntu.com >/dev/null 2>&1 || getent hosts deb.debian.org >/dev/null 2>&1; }
+
+if ! check_network; then
+  msg_error "No outbound network connectivity from inside this container (can't reach 1.1.1.1:443)."
+  msg_error "This is a container/host networking issue, not something this script can fix."
+  msg_error "On the Proxmox host, check: pct config <CTID> | grep -i net"
+  msg_error "and make sure the bridge/gateway/firewall allow outbound traffic."
+  exit 1
+fi
+
+if ! check_dns; then
+  msg_warn "Network is up but DNS resolution is failing."
+  msg_info "Trying to fix it by setting temporary nameservers: ${DNS_SERVERS}"
+  cp -aL /etc/resolv.conf /etc/resolv.conf.bak 2>/dev/null || true
+  rm -f /etc/resolv.conf
+  { for ns in $DNS_SERVERS; do echo "nameserver ${ns}"; done; } > /etc/resolv.conf
+
+  if check_dns; then
+    msg_ok "DNS resolution fixed"
+  else
+    msg_error "DNS is still failing after setting nameservers to: ${DNS_SERVERS}"
+    msg_error "On the Proxmox host, check/set: pct set <CTID> -nameserver 1.1.1.1 -searchdomain local"
+    msg_error "then: pct reboot <CTID>"
+    exit 1
+  fi
+fi
 
 msg_info "Updating package lists..."
 apt-get update -y >/dev/null
