@@ -123,9 +123,36 @@ else
   echo "PasswordAuthentication yes" >> "$SSHD_CONFIG"
 fi
 
-systemctl enable ssh >/dev/null 2>&1 || systemctl enable sshd >/dev/null 2>&1 || true
-systemctl restart ssh >/dev/null 2>&1 || systemctl restart sshd >/dev/null 2>&1 || true
-msg_ok "SSH service enabled and running"
+# Host keys can be missing (e.g. a template that had its keys stripped
+# before being cloned, or a base image that never generated them).
+# ssh-keygen -A silently skips any key type that already exists, so it's
+# always safe to run this unconditionally.
+msg_info "Making sure SSH host keys exist..."
+ssh-keygen -A >/dev/null 2>&1
+msg_ok "SSH host keys present"
+
+# --- FIX: the old version chained `|| true` onto enable/restart, so a
+# failure was silently swallowed and the script printed "OK" regardless
+# of whether sshd actually came up. Now we check the real state instead
+# of assuming it. ---
+if ! systemctl enable ssh >/dev/null 2>&1 && ! systemctl enable sshd >/dev/null 2>&1; then
+  msg_warn "Could not find an ssh/sshd systemd unit to enable"
+fi
+
+if ! systemctl restart ssh >/dev/null 2>&1 && ! systemctl restart sshd >/dev/null 2>&1; then
+  msg_error "SSH failed to restart — check: systemctl status ssh"
+fi
+
+SSH_ACTIVE="no"
+if systemctl is-active --quiet ssh 2>/dev/null || systemctl is-active --quiet sshd 2>/dev/null; then
+  SSH_ACTIVE="yes"
+fi
+
+if [[ "$SSH_ACTIVE" == "yes" ]]; then
+  msg_ok "SSH service enabled and running"
+else
+  msg_error "SSH does not appear to be running. Check: systemctl status ssh"
+fi
 
 if [[ -n "${ROOT_PASSWORD:-}" ]]; then
   msg_info "Setting root password..."
@@ -190,7 +217,11 @@ echo
 echo -e "${GREEN}=========================================================${NC}"
 echo -e "${GREEN} LXC setup complete!${NC}"
 echo -e "${GREEN}=========================================================${NC}"
-echo -e " SSH:      ssh root@${IP_ADDR:-<container-ip>}"
+if [[ "$SSH_ACTIVE" == "yes" ]]; then
+  echo -e " SSH:      ssh root@${IP_ADDR:-<container-ip>}"
+else
+  echo -e " SSH:      ${RED}NOT running — check 'systemctl status ssh' inside the container${NC}"
+fi
 echo -e " Docker:   ${DOCKER_VERSION}"
 echo
 msg_warn "This container must have 'nesting=1' (and usually 'keyctl=1')"
