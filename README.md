@@ -59,11 +59,16 @@ pct exec 200 -- bash /root/setup-lxc.sh
 pct exec 200 -- bash -c "ROOT_PASSWORD='YourStrongPass' EXTRA_USER='youruser' bash /root/setup-lxc.sh"
 ```
 
-### Option 3 — curl one-liner (if hosted somewhere, e.g. GitHub raw)
+### Option 3 — curl one-liner
+
+Repo: https://github.com/themorajr/proxmox-lxc-pre/blob/main/setup-lxc.sh
 
 ```bash
-pct exec 200 -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/<you>/<repo>/main/setup-lxc.sh)"
+pct exec 200 -- bash -c "$(curl -fsSL https://raw.githubusercontent.com/themorajr/proxmox-lxc-pre/main/setup-lxc.sh)"
 ```
+
+> Note: use the `raw.githubusercontent.com` link (not the `github.com/.../blob/...`
+> page) with `curl`, otherwise you'll download the HTML page instead of the script.
 
 ### Option 4 — run directly from inside the container console
 
