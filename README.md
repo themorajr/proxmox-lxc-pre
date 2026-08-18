@@ -16,11 +16,13 @@ container (Debian/Ubuntu based). It will:
    - Enables root login over SSH (`PermitRootLogin yes`)
    - Enables password authentication
    - Optionally sets the root password
-2. Install **Docker Engine + Docker Compose plugin** via Docker's official
+2. Check network/DNS connectivity and auto-fix DNS if it's broken (writes
+   temporary nameservers before touching apt)
+3. Install **Docker Engine + Docker Compose plugin** via Docker's official
    apt repository
-3. Enable the Docker service to start on boot
-4. Optionally add a non-root user to the `docker` group
-5. Print a summary (container IP, Docker version, SSH command) when done
+4. Enable the Docker service to start on boot
+5. Optionally add a non-root user to the `docker` group
+6. Print a summary (container IP, Docker version, SSH command) when done
 
 ## Requirements
 
@@ -87,6 +89,7 @@ chmod +x setup-lxc.sh
 | `ROOT_PASSWORD`  | (unset) | If set, sets/resets the root password so you can log in over SSH.    |
 | `ALLOW_ROOT_SSH` | `yes`   | Set to `no` to skip enabling `PermitRootLogin yes`.                  |
 | `EXTRA_USER`     | (unset) | Existing username to add to the `docker` group.                     |
+| `DNS_SERVERS`    | `1.1.1.1 8.8.8.8` | Space-separated nameservers used to auto-fix `/etc/resolv.conf` if DNS is broken. |
 
 ## Security notes
 
@@ -104,3 +107,18 @@ chmod +x setup-lxc.sh
 - **Can't SSH in** — make sure the container has an IP address
   (`pct exec <CTID> -- hostname -I`) and that `ROOT_PASSWORD` was set or an
   SSH key was already present.
+- **`Temporary failure resolving 'archive.ubuntu.com'` during `apt-get`** —
+  the container has no working DNS. The script now checks this up front and
+  tries to auto-fix it by writing `DNS_SERVERS` into `/etc/resolv.conf`. If
+  it still fails, the network itself is unreachable from the container —
+  check on the host:
+  ```bash
+  pct exec <CTID> -- cat /etc/resolv.conf
+  pct exec <CTID> -- ping -c2 1.1.1.1      # tests raw connectivity
+  pct exec <CTID> -- ping -c2 archive.ubuntu.com   # tests DNS
+  pct config <CTID> | grep -iE 'net|nameserver'
+  ```
+  Common fixes: set a nameserver on the container
+  (`pct set <CTID> -nameserver 1.1.1.1 -searchdomain local` then
+  `pct reboot <CTID>`), or check the bridge/gateway/firewall on the host if
+  even the raw IP ping fails.
